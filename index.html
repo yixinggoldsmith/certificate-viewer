@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Certificate</title>
+<style>
+  body { margin: 0; background: #e9e9e9; display: flex; justify-content: center; }
+  /* Slide is portrait, about 369 x 718 */
+  #cert {
+    position: relative; width: 100%; max-width: 520px;
+    aspect-ratio: 369 / 718;
+    background: url('template.png') center / 100% 100% no-repeat;
+    container-type: inline-size;
+    font-family: Arial, Helvetica, sans-serif; color: #000;
+  }
+  .v {
+    position: absolute; left: 62.9%; transform: translateY(-50%);
+    font-size: 4.8cqw; white-space: nowrap; visibility: hidden;
+  }
+  #cert.ready .v { visibility: visible; }
+  /* vertical centre of each row, as % of slide height */
+  #certNo    { top: 43.5%; }
+  #weight    { top: 48.6%; }
+  #width     { top: 53.9%; }
+  #length    { top: 59.3%; }
+  #thickness { top: 64.5%; }
+  #fineness  { top: 69.9%; }
+  #msg { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+         font-size: 5cqw; text-align: center; background: rgba(255,255,255,.9); }
+</style>
+</head>
+<body>
+<div id="cert">
+  <div class="v" id="certNo"></div>
+  <div class="v" id="weight"></div>
+  <div class="v" id="width"></div>
+  <div class="v" id="length"></div>
+  <div class="v" id="thickness"></div>
+  <div class="v" id="fineness"></div>
+  <div id="msg"></div>
+</div>
+<script>
+const API = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
+const MAP = {
+  certNo: 'Certificate Number', weight: 'Weight', width: 'Width',
+  length: 'Length', thickness: 'Thickness', fineness: 'Fineness'
+};
+const cert = document.getElementById('cert');
+const msg = document.getElementById('msg');
+function showMsg(t) { msg.textContent = t; msg.style.display = 'flex'; }
+
+const id = new URLSearchParams(location.search).get('id');
+if (!id) {
+  showMsg('No certificate specified');
+} else {
+  fetch(API + '?id=' + encodeURIComponent(id))
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) return showMsg('Certificate not found');
+      for (const [elId, field] of Object.entries(MAP)) {
+        // The colon is drawn here, so delete it from the slide image
+        document.getElementById(elId).textContent = ': ' + (d[field] ?? '');
+      }
+      cert.classList.add('ready');
+    })
+    .catch(() => showMsg('Unable to load certificate'));
+}
+</script>
+</body>
+</html>
