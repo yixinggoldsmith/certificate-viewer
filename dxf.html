@@ -63,9 +63,10 @@
   <section>
     <h2>All certificates (ZIP of DXF files)</h2>
     <label for="api">Apps Script Web app URL</label>
-    <input id="api" placeholder="https://script.google.com/macros/s/.../exec">
+    <input id="api" value="https://script.google.com/macros/s/AKfycbzmRAOc8CT05-5dMfs2JwoQzb3spMXB1h1x-RDJPyl0-8rczRkb_Uy_tGWrCaIyrnGWcA/exec" placeholder="https://script.google.com/macros/s/.../exec">
     <label for="key">Access key</label>
     <input id="key" type="password" autocomplete="off">
+    <label style="display:flex;align-items:center;gap:8px;margin-top:8px"><input id="remember" type="checkbox" style="width:auto"> Remember the key on this device only</label>
     <button id="all">Download all as ZIP</button>
     <div id="status"></div>
   </section>
@@ -182,10 +183,20 @@ $('one').onclick = () => {
   download(new Blob([build(id).dxf], { type: 'application/dxf' }), safeName(id) + '.dxf');
 };
 
+// Remember the access key in this browser only (never in the GitHub file)
+try {
+  const saved = localStorage.getItem('dxfKey');
+  if (saved) { $('key').value = saved; $('remember').checked = true; }
+} catch (e) {}
+
 $('all').onclick = async () => {
   const api = $('api').value.trim(), key = $('key').value;
   const st = $('status');
   if (!api || !key) { st.textContent = 'Enter the Web app URL and access key.'; return; }
+  try {
+    if ($('remember').checked) localStorage.setItem('dxfKey', key);
+    else localStorage.removeItem('dxfKey');
+  } catch (e) {}
   $('all').disabled = true;
   try {
     st.textContent = 'Loading certificate numbers...';
