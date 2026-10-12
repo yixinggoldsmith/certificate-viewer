@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>QR DXF Export</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  body { font-family: Arial, Helvetica, sans-serif; margin: 0; background: #f4f4f4; color: #222; }
+  main { max-width: 640px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 1.3rem; }
+  h2 { font-size: 1.05rem; margin: 0 0 10px; }
+  section { background: #fff; border-radius: 10px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  label { display: block; font-size: .85rem; margin: 10px 0 4px; color: #555; }
+  input, select { width: 100%; box-sizing: border-box; padding: 9px; font-size: 1rem; border: 1px solid #ccc; border-radius: 6px; }
+  .row { display: flex; gap: 10px; }
+  .row > div { flex: 1; }
+  button { margin-top: 14px; padding: 11px 16px; font-size: 1rem; border: 0; border-radius: 6px; background: #b5694a; color: #fff; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  #preview { margin-top: 12px; text-align: center; }
+  #preview svg { width: 200px; height: 200px; border: 1px solid #ddd; background: #fff; }
+  .note { font-size: .82rem; color: #666; margin-top: 8px; }
+  .warn { color: #b00020; }
+  #status { margin-top: 10px; font-size: .9rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>QR code DXF export (laser-ready)</h1>
+
+  <section>
+    <h2>Settings</h2>
+    <label for="base">Certificate link (the number is added at the end)</label>
+    <input id="base" value="https://senlaiyx.github.io/certificate-viewer/?id=">
+    <div class="row">
+      <div>
+        <label for="mm">QR size (mm, width = height)</label>
+        <input id="mm" type="number" min="3" step="0.5" value="12">
+      </div>
+      <div>
+        <label for="ec">Error correction</label>
+        <select id="ec">
+          <option value="L">L (fewest modules)</option>
+          <option value="M" selected>M (recommended)</option>
+          <option value="Q">Q</option>
+          <option value="H">H (most robust)</option>
+        </select>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>One certificate</h2>
+    <label for="cid">Certificate number</label>
+    <input id="cid" placeholder="e.g. E1" autocomplete="off">
+    <div id="preview"></div>
+    <div id="info" class="note"></div>
+    <button id="one" disabled>Download DXF</button>
+  </section>
+
+  <section>
+    <h2>All certificates (ZIP of DXF files)</h2>
+    <label for="api">Apps Script Web app URL</label>
+    <input id="api" placeholder="https://script.google.com/macros/s/.../exec">
+    <label for="key">Access key</label>
+    <input id="key" type="password" autocomplete="off">
+    <button id="all">Download all as ZIP</button>
+    <div id="status"></div>
+  </section>
+
+  <p class="note">The DXF contains only the dark QR modules as closed shapes in millimetres. There is no background square, so the laser engraves only the code. In your laser software use Fill mode, and Weld shapes first if it asks.</p>
+</main>
+
+<script>
+/* ---------- QR to rectangles to DXF ---------- */
+function makeQr(text, ec) {
+  const qr = qrcode(0, ec);
+  qr.addData(text);
+  qr.make();
+  return { n: qr.getModuleCount(), isDark: (r, c) => qr.isDark(r, c) };
+}
+
+function qrRects(isDark, n) {
+  const runs = [];
+  for (let r = 0; r < n; r++) {
+    let c = 0;
+    while (c < n) {
+      if (isDark(r, c)) {
+        const s = c;
+        while (c < n && isDark(r, c)) c++;
+        runs.push({ r, c0: s, c1: c });
+      } else c++;
+    }
+  }
+  const rects = [];
+  let open = new Map();
+  for (let r = 0; r < n; r++) {
+    const next = new Map();
+    runs.filter(x => x.r === r).forEach(x => {
+      const k = x.c0 + '-' + x.c1;
+      const p = open.get(k);
+      if (p) { p.r1 = r + 1; next.set(k, p); }
+      else {
+        const q = { c0: x.c0, c1: x.c1, r0: r, r1: r + 1 };
+        rects.push(q);
+        next.set(k, q);
+      }
+    });
+    open = next;
+  }
+  return rects;
+}
+
+function qrToDxf(rects, n, mm) {
+  const s = mm / n;
+  const f = v => String(Math.round(v * 10000) / 10000);
+  let o = '0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1009\n9\n$INSUNITS\n70\n4\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n';
+  for (const q of rects) {
+    const x0 = q.c0 * s, x1 = q.c1 * s;
+    const yTop = (n - q.r0) * s, yBot = (n - q.r1) * s;
+    o += '0\nPOLYLINE\n8\n0\n66\n1\n10\n0.0\n20\n0.0\n30\n0.0\n70\n1\n';
+    [[x0, yBot], [x1, yBot], [x1, yTop], [x0, yTop]].forEach(p => {
+      o += '0\nVERTEX\n8\n0\n10\n' + f(p[0]) + '\n20\n' + f(p[1]) + '\n30\n0.0\n';
+    });
+    o += '0\nSEQEND\n8\n0\n';
+  }
+  o += '0\nENDSEC\n0\nEOF\n';
+  return o;
+}
+// END qrToDxf
+
+/* ---------- UI ---------- */
+const $ = id => document.getElementById(id);
+const linkFor = id => $('base').value + encodeURIComponent(id);
+const safeName = s => String(s).replace(/[^A-Za-z0-9._-]+/g, '_');
+
+function download(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+function build(id) {
+  const { n, isDark } = makeQr(linkFor(id), $('ec').value);
+  const rects = qrRects(isDark, n);
+  const mm = parseFloat($('mm').value) || 12;
+  return { n, rects, mm, dxf: qrToDxf(rects, n, mm) };
+}
+
+function refresh() {
+  const id = $('cid').value.trim();
+  $('one').disabled = !id;
+  if (!id) { $('preview').innerHTML = ''; $('info').textContent = ''; return; }
+  const { n, rects, mm } = build(id);
+  let svg = '<svg viewBox="0 0 ' + n + ' ' + n + '" shape-rendering="crispEdges">';
+  rects.forEach(q => {
+    svg += '<rect x="' + q.c0 + '" y="' + q.r0 + '" width="' + (q.c1 - q.c0) + '" height="' + (q.r1 - q.r0) + '"/>';
+  });
+  $('preview').innerHTML = svg + '</svg>';
+  const mod = mm / n;
+  $('info').innerHTML = n + ' x ' + n + ' modules, each ' + mod.toFixed(2) + ' mm.' +
+    (mod < 0.3 ? ' <span class="warn">Very small. Increase the size or use lower error correction, and test-scan an engraved sample.</span>' : '');
+}
+['cid', 'base', 'mm', 'ec'].forEach(i => $(i).addEventListener('input', refresh));
+
+$('one').onclick = () => {
+  const id = $('cid').value.trim();
+  if (!id) return;
+  download(new Blob([build(id).dxf], { type: 'application/dxf' }), safeName(id) + '.dxf');
+};
+
+$('all').onclick = async () => {
+  const api = $('api').value.trim(), key = $('key').value;
+  const st = $('status');
+  if (!api || !key) { st.textContent = 'Enter the Web app URL and access key.'; return; }
+  $('all').disabled = true;
+  try {
+    st.textContent = 'Loading certificate numbers...';
+    const res = await fetch(api + '?action=list&key=' + encodeURIComponent(key));
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    const zip = new JSZip();
+    const used = new Set();
+    data.ids.forEach((id, i) => {
+      let name = safeName(id), k = 2;
+      while (used.has(name)) name = safeName(id) + '_' + k++;
+      used.add(name);
+      zip.file(name + '.dxf', build(id).dxf);
+      if (i % 50 === 0) st.textContent = 'Building ' + (i + 1) + ' of ' + data.ids.length + '...';
+    });
+    st.textContent = 'Zipping ' + data.ids.length + ' files...';
+    const blob = await zip.generateAsync({ type: 'blob' });
+    download(blob, 'qr-dxf.zip');
+    st.textContent = 'Done: ' + data.ids.length + ' DXF files.';
+  } catch (e) {
+    st.textContent = 'Failed: ' + e.message;
+  }
+  $('all').disabled = false;
+};
+</script>
+</body>
+</html>
