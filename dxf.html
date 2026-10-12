@@ -33,7 +33,7 @@
   <section>
     <h2>Settings</h2>
     <label for="base">Certificate link (the number is added at the end)</label>
-    <input id="base" value="https://senlaiyx.github.io/certificate-viewer/?id=">
+    <input id="base" value="https://yixinggoldsmith.github.io/certificate-viewer/?id=">
     <div class="row">
       <div>
         <label for="mm">QR size (mm, width = height)</label>
@@ -133,7 +133,13 @@ function qrToDxf(rects, n, mm) {
 
 /* ---------- UI ---------- */
 const $ = id => document.getElementById(id);
-const linkFor = id => $('base').value + encodeURIComponent(id);
+// Anything typed after "?id=" in the link box is ignored, so a stray number cannot end up in the QR
+const linkFor = id => {
+  let b = $('base').value.trim();
+  const k = b.indexOf('?id=');
+  if (k > -1) b = b.slice(0, k + 4);
+  return b + encodeURIComponent(id);
+};
 const safeName = s => String(s).replace(/[^A-Za-z0-9._-]+/g, '_');
 
 function download(blob, name) {
@@ -164,7 +170,8 @@ function refresh() {
   });
   $('preview').innerHTML = svg + '</svg>';
   const mod = mm / n;
-  $('info').innerHTML = n + ' x ' + n + ' modules, each ' + mod.toFixed(2) + ' mm.' +
+  $('info').innerHTML = 'QR opens: <b>' + linkFor(id).replace(/</g, '&lt;') + '</b><br>' +
+    n + ' x ' + n + ' modules, each ' + mod.toFixed(2) + ' mm.' +
     (mod < 0.3 ? ' <span class="warn">Very small. Increase the size or use lower error correction, and test-scan an engraved sample.</span>' : '');
 }
 ['cid', 'base', 'mm', 'ec'].forEach(i => $(i).addEventListener('input', refresh));
